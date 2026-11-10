@@ -1915,7 +1915,10 @@ export interface LocalAgentClient {
   storageDirectory?: string;
 }
 
+export const TASK_SYSTEM_PROMPT = Symbol('cindy.task-system-prompt');
 export interface StartSessionOptions {
+  /** Host-owned task instructions, appended after the native fixed prompt. */
+  readonly [TASK_SYSTEM_PROMPT]?: string;
   [NATIVE_SUBSCRIPTION_ACCOUNT]?: NativeSubscriptionAccount;
   [LOCAL_AGENT_CLIENT]?: LocalAgentClient;
   /**
@@ -2167,6 +2170,7 @@ export interface MainOwnedSendContext {
 export const PI_CACHE_RECOVERY_EXPECTATION = Symbol('pi-cache-recovery-expectation');
 
 /** Host-owned, call-local model request interception. Never accepted from wire options. */
+export { assembleSystemPromptSections, type SystemPromptSection } from './shared/system-prompt-sections.js';
 export const MODEL_REQUEST_CONTROL = Symbol('cindy.model-request-control');
 export interface ModelRequestRoute {
   model: string;
