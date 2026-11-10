@@ -4059,6 +4059,11 @@ Mobile 对所有预创建恢复记录（含未收到创建回包的 `reserved`�
   `terminal` 新增同一 helper registry 的 `terminal_start/list/read/write/resize/stop/forget`，不改 Host 调用签名。
   新组仍须显式批准；旧 receipt 和未知字段不自动授予执行命令权限。终端输出用 Host 随机进程代次及
   非消费游标续读，缺口显式 `resetRequired`；执行电脑不支持或重启后记录丢失时报告失败，不重放命令。
+  Node Host 与桌面控制端沿用上述工具签名、manifest 和 receipt。loopback SSE 客户端通过
+  `protocol=2&confirmations=1` 显式协商不回放的 `host_prompt` 帧；只有现有四种插件确认请求/
+  撤回 channel 可用，不占用或推进任务事件序号。旧客户端不协商就不投递此类帧；旧 Host
+  忽略额外 query，任务事件流保持原行为。回答沿用同名 preload 契约，经已认证控制端绑定
+  到原窗口确认桥；断线取消，不重试写操作。不改变 device-link 或自建中转 wire payload。
 - 历史查询通道增量支持 `list_teammates`，复用同一个工具 registry 校验与宿主目录读取；不新增 channel。
 - `control/delete_session` 为增量 Agent 工具，插件通过同一入口调用；本机复用 `patchSessionMetaInDb(status:'deleted')`，
   远程复用已有 `local-db:sessions:patch-meta` 状态协议，不新增通道或重试；无法确认写入结果时返回 `REMOTE_RESULT_UNKNOWN`。

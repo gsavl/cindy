@@ -1005,6 +1005,7 @@ import { startHostEventStream } from '@cindy/maker-shared/host-event-stream';
   function ensureEventStream() {
     if (eventConnection) return;
     eventConnection = startHostEventStream({
+      confirmations: true,
       open: (query, signal) => fetch(`/events${query}`, { credentials: 'same-origin', signal }),
       beforeEvents: async (signal) => {
         const auth = await requestHost('/api/auth/state', null, 'POST', signal);
@@ -1038,6 +1039,10 @@ import { startHostEventStream } from '@cindy/maker-shared/host-event-stream';
             'ghosts:runtime-changed': 'ghosts.onRuntimeChanged',
             'ghosts:card-updated': 'ghosts.onCardUpdated',
             'ghosts:notify': 'ghosts.onNotify',
+            'ghosts:confirm-request': 'ghosts.onConfirmRequest',
+            'ghosts:confirm-dismissed': 'ghosts.onConfirmDismissed',
+            'ghosts:install-consent:request': 'ghosts.onInstallConsentRequest',
+            'ghosts:install-consent:dismissed': 'ghosts.onInstallConsentDismissed',
             'maker:auth:state-changed': 'maker.auth.onStateChanged',
             'maker:auth:login-progress': 'maker.auth.onLoginProgress',
             'model-access:status-change': 'modelAccess.onStatusChange',
