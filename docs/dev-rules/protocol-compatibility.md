@@ -4082,6 +4082,8 @@ Mobile 对所有预创建恢复记录（含未收到创建回包的 `reserved`�
   服务提供者继续使用 browserExtension.pageControl 原声明与详情页选择，不改变扩展 wire 协议。
   discovery/host_services 继续用相同 helper 调用，增量返回本机服务目录及本插件声明/批准布尔值；
   不增加跨端消息或批准字段，旧宿主不支持时按原工具错误处理。目录不授予执行或插件管理权。
+  服务依赖继续使用已存在的 agent.hostTools；资源退出只接回原运行时生命周期，不新增 manifest、receipt、
+  setup 或远程字段。停止、崩溃与换版后的电脑连接/快照失效，旧插件其余能力和持久数据不要求重新配置。
 - 历史查询通道增量支持 `list_teammates`，复用同一个工具 registry 校验与宿主目录读取；不新增 channel。
 - `control/delete_session` 为增量 Agent 工具，插件通过同一入口调用；本机复用 `patchSessionMetaInDb(status:'deleted')`，
   远程复用已有 `local-db:sessions:patch-meta` 状态协议，不新增通道或重试；无法确认写入结果时返回 `REMOTE_RESULT_UNKNOWN`。
