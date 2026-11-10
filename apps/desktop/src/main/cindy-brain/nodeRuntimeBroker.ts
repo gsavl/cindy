@@ -162,6 +162,7 @@ export interface GhostNodeRuntimeBrokerDeps {
   authenticatedFetch?: (ghostId: string, request: Record<string, unknown>, authorization: string,
     assertCurrent: () => void, signal: AbortSignal) => Promise<unknown>;
   hostToolRequest?: (ghostId: string, payload: unknown, current: () => boolean) => Promise<unknown>;
+  networkRequest?: (ghostId: string, payload: Record<string, unknown>) => Promise<unknown>;
   secretSaved?: (ghostId: string, secretKey: string) => boolean;
   /** 只解析本插件显式引用的 OAuth 槽；不交付 refresh token。 */
   resolveOauthSecret?: (ghostId: string, secretKey: string, accountId?: string) => Promise<
@@ -352,6 +353,7 @@ interface WorkerEntry {
   stdoutBuffer: string;
   nextId: number;
   pending: Map<string, PendingRpc>;
+  networkRequests: number;
   /** 本 worker 名下代启的子进程(childId → 记账;级联生死)。 */
   children: Map<string, ChildProcEntry>;
   idleTimer: NodeJS.Timeout | null;
@@ -902,6 +904,9 @@ export class GhostNodeRuntimeBroker {
     if (!this.ownerScopeUsable(GhostNodeRuntimeBroker.instanceId(entry.ghost), entry.ownerScopeSnapshot)) return;
     const message = parseGhostNodeChildToHostMessage(raw);
     if (!message) return;
+    if (message.type === 'network-request') {
+      void this.handleNetworkRequest(entry, message); return;
+    }
     if (message.type === 'host-tool-request') {
       void this.handleHostToolRequest(entry, message); return;
     }
@@ -927,15 +932,33 @@ export class GhostNodeRuntimeBroker {
     }
   }
 
+  private workerHostCurrent(entry: WorkerEntry): boolean {
+    const id = GhostNodeRuntimeBroker.instanceId(entry.ghost);
+    const ghost = this.deps.getGhost(id);
+    return !entry.stopping && this.workers.get(GhostNodeRuntimeBroker.keyOf(id, entry.entryRel)) === entry &&
+      this.ownerScopeUsable(id, entry.ownerScopeSnapshot) && ghost?.enabled === true && ghost.dir === entry.hostToolIdentity.dir &&
+      ghost.approval?.state === 'approved' && ghost.approval.revision === entry.hostToolIdentity.approvalRevision &&
+      JSON.stringify(ghost.manifest) === entry.hostToolIdentity.manifest;
+  }
+
+  private async handleNetworkRequest(entry: WorkerEntry, message: Extract<GhostNodeChildToHostMessage, { type: 'network-request' }>) {
+    let acquired = false;
+    try {
+      if (!this.workerHostCurrent(entry) || !this.deps.networkRequest) throw new Error('NODE_HOST_UNAVAILABLE');
+      if (entry.networkRequests >= 8) throw new Error('NODE_HOST_BUSY');
+      entry.networkRequests += 1;
+      acquired = true;
+      const result = await this.deps.networkRequest(GhostNodeRuntimeBroker.instanceId(entry.ghost), { ...message.request, callId: undefined });
+      if (!this.workerHostCurrent(entry)) throw new Error('NODE_HOST_UNAVAILABLE');
+      this.replyToWorker(entry, { type: 'node-host-result', reqId: message.reqId, ok: true, result });
+    } catch {
+      this.replyToWorker(entry, { type: 'node-host-result', reqId: message.reqId, ok: false });
+    } finally { if (acquired) entry.networkRequests -= 1; }
+  }
+
   private async handleHostToolRequest(entry: WorkerEntry, message: Extract<GhostNodeChildToHostMessage, { type: 'host-tool-request' }>) {
     const id = GhostNodeRuntimeBroker.instanceId(entry.ghost);
-    const current = () => {
-      const ghost = this.deps.getGhost(id);
-      return this.workers.get(GhostNodeRuntimeBroker.keyOf(id, entry.entryRel)) === entry &&
-        this.ownerScopeUsable(id, entry.ownerScopeSnapshot) && ghost?.enabled === true && ghost.dir === entry.hostToolIdentity.dir &&
-        ghost.approval?.state === 'approved' && ghost.approval.revision === entry.hostToolIdentity.approvalRevision &&
-        JSON.stringify(ghost.manifest) === entry.hostToolIdentity.manifest;
-    };
+    const current = () => this.workerHostCurrent(entry);
     const denied = { isError: true, content: [{ type: 'text', text: '{"ok":false,"errorCode":"PERMISSION_DENIED"}' }] };
     try {
       const result = current() && this.deps.hostToolRequest ? await this.deps.hostToolRequest(id, message, current) : denied;
@@ -1700,6 +1723,7 @@ export class GhostNodeRuntimeBroker {
       stdoutBuffer: '',
       nextId: 1,
       pending: new Map(),
+      networkRequests: 0,
       children: new Map(),
       idleTimer: null,
       hardKillTimer: null,
