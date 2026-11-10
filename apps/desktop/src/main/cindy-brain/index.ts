@@ -717,6 +717,7 @@ import { readProviderOrder } from '../maker-host/provider-order-store.js';
 import { guardedOutboundFetch, outboundFetch, createOutboundHttpAgent } from '../maker-host/outbound-fetch.desktop.js';
 import { getDesktopMcpToolApprovalPolicy, setGhostToolApprovalResolver } from '../maker-host/mcp-tool-approval-policy.js';
 import { createHostToolRuntime } from '../mcp-integrations/hostToolCaller.js';
+import { getDesktopHostTerminalService } from '../terminal/terminalService.desktop.js';
 import { handlePluginHostToolRequest } from './hostToolSlot.js';
 import { getSharedGhCliTokenSource } from '../git-context/ghCliTokenSource.js';
 import { bindingStore } from '../im/binding.js';
@@ -2315,6 +2316,7 @@ export function getGhostRuntime(): GhostRuntime {
         getGhostPipeDispatcher().onRuntimeState(storagePart, state);
         if (state !== 'running') {
           networkSlotSingleton?.disposeGhost(storagePart);
+          getDesktopHostTerminalService().disposePlugin(storagePart);
           modelPickerSingleton?.cancel(storagePart);
           pluginInvocations.invalidate(storagePart);
           invocationRuntimeGenerations.set(storagePart, (invocationRuntimeGenerations.get(storagePart) ?? 0) + 1);
@@ -2636,6 +2638,7 @@ export function getGhostNodeRuntimeBroker(): GhostNodeRuntimeBroker {
       authenticatedFetch: (ghostId, request, authorization, assertCurrent, signal) =>
         getGhostNetworkSlot().handleAuthenticatedNodeFetch(ghostId, request, authorization, assertCurrent, signal),
       hostToolRequest: requestPluginHostToolCall,
+      onStopped: id => getDesktopHostTerminalService().disposePlugin(id),
       networkRequest: (id, request) => request.op === 'fetch'
         ? getGhostNetworkSlot().handleFetchRequest(id, request)
         : getGhostNetworkSlot().handleNetworkRequest(id, request),

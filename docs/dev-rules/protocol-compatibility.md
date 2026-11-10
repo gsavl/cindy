@@ -4052,10 +4052,13 @@ Mobile 对所有预创建恢复记录（含未收到创建回包的 `reserved`�
   只有改变既有字段结构或安全语义时才需要协调协议升级。
 - 插件必须检测接口并处理不支持响应，局部降级或提示升级。`minCindyVersion` 不能替代
   这些处理：手动导入、旧版或其它安装渠道仍可能将包交给不适配客户端。
-- `agent.hostTools: string[]` 增量声明宿主工具组，当前识别 history/control/handoff/settings/scheduler。
+- `agent.hostTools: string[]` 增量声明宿主工具组，当前识别 history/control/handoff/settings/scheduler/terminal。
   未知字符串保留但不授权；receipt 增量可选 `approvedHostToolGroups` 不改变版本，旧记录可继续读取，缺少批准只影响新接口。
   UI 管子新增 `host-tool-request`，Node 私有通道使用同类型加 `reqId`，共用宿主校验及 Agent 工具处理器；返回原始 MCP 结果。
   旧宿主可保留清单但不支持接口，插件须检测 `cindy.host?.call` 并处理不支持响应。无 Session 的插件调用方不会改变原任务调用方协议或身份；不涉及 device-link wire 变更。
+  `terminal` 新增同一 helper registry 的 `terminal_start/list/read/write/resize/stop/forget`，不改 Host 调用签名。
+  新组仍须显式批准；旧 receipt 和未知字段不自动授予执行命令权限。终端输出用 Host 随机进程代次及
+  非消费游标续读，缺口显式 `resetRequired`；执行电脑不支持或重启后记录丢失时报告失败，不重放命令。
 - 历史查询通道增量支持 `list_teammates`，复用同一个工具 registry 校验与宿主目录读取；不新增 channel。
 - `control/delete_session` 为增量 Agent 工具，插件通过同一入口调用；本机复用 `patchSessionMetaInDb(status:'deleted')`，
   远程复用已有 `local-db:sessions:patch-meta` 状态协议，不新增通道或重试；无法确认写入结果时返回 `REMOTE_RESULT_UNKNOWN`。
