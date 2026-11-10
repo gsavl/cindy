@@ -7764,6 +7764,8 @@
         "hostTools_scheduler": "自动化管理",
         "hostTools_terminal": "终端与命令",
         "codeDetailFiles": "插件页面保持隔离；获准的文件操作由 Cindy 在你选择的目录内执行。",
+        "hostTools_discovery": "查看宿主能力",
+        "hostTools_discoveryDetail": "只读查询执行电脑提供的服务，以及本插件已声明和获准的工具组。不能借此安装、停用或撤销其他插件。",
         "hostTools_browser": "操作浏览器",
         "hostTools_browserDetail": "使用 Cindy 当前选择的浏览器，读取网页并执行页面操作。切换到“我的浏览器”、上传文件等敏感操作仍由 Cindy 确认。",
         "hostTools_computer": "操作本机电脑",
