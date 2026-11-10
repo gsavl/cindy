@@ -20,7 +20,7 @@ export interface QualifiedSessionTarget {
 export interface RemoteSessionHandoffRequest {
   sessionId: string;
   message: string;
-  sender: { sessionId: string; title?: string };
+  sender: { sessionId: string; title?: string } | { kind: 'plugin'; pluginId: string; name?: string };
   requestSource?: ForwardedRequestSource;
   taskActionReceipt?: string;
 }
@@ -151,7 +151,7 @@ export function createRemoteSessionHandoff(deps: {
     try {
       assertCurrent = deps.captureAccess();
       sender = await request.sender();
-      captured = await deps.captureRequest?.(sender.sessionId, request.message, { sessionId: target.sessionId });
+      if ('sessionId' in sender) captured = await deps.captureRequest?.(sender.sessionId, request.message, { sessionId: target.sessionId });
       assertCurrent();
     } catch {
       return notSent();
@@ -173,15 +173,18 @@ export function createRemoteSessionHandoff(deps: {
       // Old Hosts cannot recheck queued authority. Probe before sending any content.
       const support = await deps.invoke(target.deviceId, DL_SESSION_HANDOFF_CHANNEL,
         [{ action: 'task-action-capability', sessionId: target.sessionId }], { preSend: assertCurrent });
-      const capability = support.ok ? support.result as { taskActionVersion?: unknown; plainRequestBody?: unknown } | null : null;
+      const capability = support.ok ? support.result as { taskActionVersion?: unknown; plainRequestBody?: unknown; pluginCaller?: unknown } | null : null;
       if (capability?.taskActionVersion !== 1)
         return { ok: false, errorCode: 'REMOTE_UNSUPPORTED', message: 'The other computer must support task-action authorization before a message can be sent.' };
+      if ('pluginId' in sender && capability.pluginCaller !== 1)
+        return { ok: false, errorCode: 'REMOTE_UNSUPPORTED', message: 'The other computer does not support Plugin callers; no message was sent.' };
       assertCurrent();
       // Older hosts verify the quoted 用户原话 / Agent补充 envelope; keep it for them unchanged.
       const delivered = capability.plainRequestBody === 1 || !captured?.legacy ? captured : { ...captured, ...captured.legacy };
       const body = delivered?.message ?? request.message;
       const source = delivered?.autoReviewUserText.request;
-      taskActionReceipt = issueRemoteTaskActionReceipt({ ...target, senderSessionId: sender.sessionId, message: body }, assertCurrent);
+      taskActionReceipt = issueRemoteTaskActionReceipt({ ...target, ...('pluginId' in sender
+        ? { senderPluginId: sender.pluginId } : { senderSessionId: sender.sessionId }), message: body }, assertCurrent);
       const wire: RemoteSessionHandoffRequest = {
         sessionId: target.sessionId,
         message: body,

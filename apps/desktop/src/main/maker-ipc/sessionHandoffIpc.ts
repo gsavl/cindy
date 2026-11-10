@@ -21,13 +21,15 @@ import { validateRemoteTaskActionReceipt } from './remoteTaskActionReceipt.js';
 const MAX_MESSAGE_CHARS = 200_000;
 
 export interface SessionHandoffSendParams {
-  autoReviewUserText: AgentRequestReceipt;
+  autoReviewUserText: AgentRequestReceipt | string;
   clientId?: string;
   forceQueue?: boolean;
   taskActionDeliveryGuard?: TaskActionDeliveryGuard;
   targetSessionId: string;
   message: string;
-  origin: NonNullable<AgentInputQueuedMessage['origin']>;
+  origin?: NonNullable<AgentInputQueuedMessage['origin']>;
+  sourcePlugin?: AgentInputQueuedMessage['sourcePlugin'];
+  inheritTargetPlanMode?: true;
   resumeWithStoredPermissionMode: true;
 }
 
@@ -50,7 +52,7 @@ function boundedString(value: unknown, name: string, max: number): string {
 
 export function createSessionHandoffHandler(deps: {
   send(params: SessionHandoffSendParams): Promise<SessionHandoffSendResult>;
-  validate?(controllerDeviceId: string, input: { receiptId: string; sessionId: string; targetSessionId: string; message: string; release?: boolean }): Promise<boolean>;
+  validate?(controllerDeviceId: string, input: { receiptId: string; sessionId?: string; pluginId?: string; targetSessionId: string; message: string; release?: boolean }): Promise<boolean>;
 }) {
   // Claim before the first await. The sender receipt expires after one hour; retain
   // claims longer so transport replay cannot enqueue a second copy in that lifetime.
@@ -69,11 +71,16 @@ export function createSessionHandoffHandler(deps: {
     const message = body;
     const sender = requireObject(request.sender, 'sender');
     // 任务 id 是不透明字符串（IM 任务的 id 可以很长）；只拒绝会伪造设备前缀或说明结构的写法。
-    const senderSessionId = boundedString(sender.sessionId, 'sender.sessionId', 512);
-    if (senderSessionId.includes('::') || /[\s()「」]/.test(senderSessionId)) {
+    const plugin = sender.kind === 'plugin';
+    const senderPluginId = plugin ? boundedString(sender.pluginId, 'sender.pluginId', 512) : undefined;
+    const senderSessionId = plugin ? undefined : boundedString(sender.sessionId, 'sender.sessionId', 512);
+    const actorId = senderPluginId ?? senderSessionId!;
+    if (actorId.includes('::') || /[\s()「」]/.test(actorId) || (plugin && (sender.sessionId !== undefined || request.requestSource !== undefined))) {
       throwIpcError('INVALID_PARAMS', 'Invalid sender.sessionId');
     }
     const senderSessionTitle = sanitizeSourceName(sender.title);
+    const senderPluginName = plugin ? sanitizeSourceName(sender.name) : undefined;
+    const actor = plugin ? { pluginId: senderPluginId! } : { sessionId: senderSessionId! };
     if (typeof request.taskActionReceipt !== 'string' || !deps.validate) {
       return { ok: false, errorCode: 'UNSUPPORTED_CAPABILITY', message: 'Task action authorization is required; update the sending computer.' };
     }
@@ -84,31 +91,32 @@ export function createSessionHandoffHandler(deps: {
       return { ok: false, errorCode: 'UNSUPPORTED_CAPABILITY', message: 'Task action already claimed or pending limit reached; inspect the target before retrying.' };
     claimed.set(claimKey, Date.now() + 2 * 60 * 60_000);
     const taskActionDeliveryGuard: TaskActionDeliveryGuard = async () => {
-      if (!await deps.validate!(controllerDeviceId, { receiptId, sessionId: senderSessionId, targetSessionId, message: body }))
+      if (!await deps.validate!(controllerDeviceId, { receiptId, ...actor, targetSessionId, message: body }))
         throw new Error('TASK_ACTION_AUTHORIZATION_EXPIRED');
     };
     taskActionDeliveryGuard.onSettled = async () => {
       // Once the sender forgets the receipt, a replay fails validation even after
       // removing our claim. Failed release keeps the original expiry as fallback.
-      if (await deps.validate!(controllerDeviceId, { receiptId, sessionId: senderSessionId,
+      if (await deps.validate!(controllerDeviceId, { receiptId, ...actor,
         targetSessionId, message: body, release: true })) claimed.delete(claimKey);
     };
     try { await taskActionDeliveryGuard(); } catch {
       return { ok: false, errorCode: 'UNSUPPORTED_CAPABILITY', message: 'Task action authorization expired; no message was sent.' };
     }
     const result = await deps.send({
-      autoReviewUserText: { kind: 'agent-request', request: requestSource ?? { userText: null } },
+      autoReviewUserText: plugin ? body : { kind: 'agent-request', request: requestSource ?? { userText: null } },
       clientId: `remote-task-action:${receiptId}`,
       forceQueue: true,
       taskActionDeliveryGuard,
       targetSessionId,
       message,
-      origin: {
+      ...(plugin ? { inheritTargetPlanMode: true as const, sourcePlugin: { pluginId: `${controllerDeviceId}::${senderPluginId}`,
+        ...(senderPluginName ? { name: senderPluginName } : {}) } } : { origin: {
         kind: 'session',
         senderSessionId: `${controllerDeviceId}::${senderSessionId}`,
         displayText: message,
         ...(senderSessionTitle ? { senderSessionTitle } : {}),
-      },
+      } as NonNullable<AgentInputQueuedMessage['origin']> }),
       resumeWithStoredPermissionMode: true,
     });
     if (!result.ok) {
@@ -130,7 +138,7 @@ export function createSessionHandoffHandler(deps: {
  * 隐藏伙伴任务的可见性检查由 dispatch 在可见性查询就绪后执行，未就绪时这里直接拒绝。
  */
 /** plainRequestBody: this host accepts the agent's own text with a checked hand-off receipt (2026-11-05). */
-export const SESSION_HANDOFF_CAPABILITY = { taskActionVersion: 1, plainRequestBody: 1 } as const;
+export const SESSION_HANDOFF_CAPABILITY = { taskActionVersion: 1, plainRequestBody: 1, pluginCaller: 1 } as const;
 
 export function registerSessionHandoffIpc(
   deps: Parameters<typeof createSessionHandoffHandler>[0],
@@ -146,9 +154,12 @@ export function registerSessionHandoffIpc(
     const request = requireObject(value, 'request');
     if (request.action === 'task-action-capability') return SESSION_HANDOFF_CAPABILITY;
     if (request.action === 'validate-task-action') {
+      const pluginId = request.pluginId === undefined ? undefined : boundedString(request.pluginId, 'pluginId', 512);
+      const sessionId = request.sessionId === undefined ? undefined : boundedString(request.sessionId, 'sessionId', 512);
+      if ((pluginId === undefined) === (sessionId === undefined)) throwIpcError('INVALID_PARAMS', 'Exactly one caller identity is required');
       const valid = await validateRemoteTaskActionReceipt(context!.controllerDeviceId, {
         receiptId: boundedString(request.receiptId, 'receiptId', 128),
-        sessionId: boundedString(request.sessionId, 'sessionId', 512),
+        ...(pluginId ? { pluginId } : { sessionId }),
         targetSessionId: boundedString(request.targetSessionId, 'targetSessionId', 512),
         message: boundedString(request.message, 'message', MAX_MESSAGE_CHARS),
         release: request.release === true,

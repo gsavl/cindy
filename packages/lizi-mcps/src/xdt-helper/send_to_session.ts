@@ -89,7 +89,7 @@ export type SendToRemoteSessionCallback = (params: {
   deviceId: string;
   sessionId: string;
   message: string;
-  dispatcherSessionId: string;
+  dispatcherSessionId?: string;
 }) => Promise<
   ControlResult<
     {
@@ -313,7 +313,7 @@ export function registerSendToSessionTool(
             "发给其它电脑上的任务时 message_purpose 只能是 user-visible 或省略。",
           );
         }
-        if (!ctx.sessionId) {
+        if (!ctx.sessionId && ctx.hostCaller?.kind !== 'plugin') {
           return errorPayload("LEAD_NOT_SUPPORTED", "当前调用未绑定任务,无法标明消息来源。");
         }
         const remote = await deps.sendToRemoteSession({
