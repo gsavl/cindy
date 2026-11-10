@@ -542,6 +542,16 @@ async function ensureRuntime(ownerId: string): Promise<void> {
     owner: () => ({ dataOwnerId: getActiveAppSession().dataOwnerId, ownerGeneration: getActiveAppSession().generation }),
     current: toolOwnerCurrent, getGhost: id => plugins?.getGhost(id) ?? null, manager: pluginManager,
     getSession: id => agentGraph?.maker.getSession(id), confirmations: hostConfirmations, t: i18n.t,
+    taskActions: {
+      input: id => inputQueue.taskActionInput(id),
+      authorizeGroup: async () => { throw new Error('GROUP_AUTHORIZATION_REQUIRED'); },
+      getSessionWorkDir: async id => (await readSessionForRun(id))?.workingDir ?? undefined,
+      // These Bot/scheduler mutation tools are not registered until their
+      // owning services are attached. Absence is never an approval snapshot.
+      capturePermissionRequest: async () => null,
+      captureRoutine: async () => undefined,
+      getScheduleDefinition: async () => { throw new Error('SCHEDULE_DEFINITION_UNAVAILABLE'); },
+    },
   });
   plugins = await createHostPluginRuntime({ profileDir: dataDir, ownerId, manager: pluginManager, credentials,
     hostToolRequest: hostTools.request, onPluginStopped: hostTools.stopPlugin,

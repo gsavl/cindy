@@ -11,7 +11,7 @@ import {
 } from '../localDb/schema.js';
 import { tryGetDbClient } from '../localDb/client/current.js';
 import { isAppSessionBoundaryPending } from '../appSessionState.js';
-import { authorizeGroupTool } from './botGroupToolAuthorization.js';
+import type { authorizeGroupTool } from './botGroupToolAuthorization.js';
 import { readChannelToolScope } from '../im/shared/channelToolScope.js';
 import { BUILTIN_ROUTINE_SCHEDULE_PREFIX } from '../../shared/botAutonomy.js';
 import {
@@ -97,6 +97,7 @@ function captureScheduledRuntime(
 
 /** Adapt the shared gate to Host facts. No transcript parsing or Agent-supplied approval fields. */
 export function createDesktopTaskActionAuthorizer(deps: {
+  authorizeGroup: typeof authorizeGroupTool;
   input(sessionId: string): {
     key: string;
     ownerInput: boolean;
@@ -165,7 +166,7 @@ export function createDesktopTaskActionAuthorizer(deps: {
         // execution authority; guest, stale and temporarily unavailable grants fail closed.
         const group =
           caller.botId && caller.role === 'group'
-            ? await authorizeGroupTool(sessionId, caller.botId, 'owner-action')
+            ? await deps.authorizeGroup(sessionId, caller.botId, 'owner-action')
             : null;
         const ownerInput = group !== null || input.ownerInput;
         let principal: TaskActionPrincipal | undefined;

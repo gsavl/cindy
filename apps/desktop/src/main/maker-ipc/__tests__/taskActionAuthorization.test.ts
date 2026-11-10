@@ -217,6 +217,7 @@ import { botDelegations, orcaTeams } from '../../localDb/schema.js';
 import { createDesktopTaskActionAuthorizer } from '../taskActionHost.js';
 import { beginChannelToolScope } from '../../im/shared/channelToolScope.js';
 import {
+  authorizeGroupTool,
   registerGroupToolAuthority,
   GroupToolAuthorizationError,
 } from '../botGroupToolAuthorization.js';
@@ -313,6 +314,7 @@ function desktopFixture(kind: 'private' | 'group' | 'automatic' = 'group') {
   const workDirs = new Map([['companion', '/companion']]);
   const getScheduleDefinition = vi.fn(async (id: string) => structuredClone(schedules.get(id) ?? null));
   const authorize = createDesktopTaskActionAuthorizer({
+    authorizeGroup: authorizeGroupTool,
     input: () => ({ ...activeInput }), confirm, getSession,
     capturePermissionRequest,
     getScheduleDefinition,
