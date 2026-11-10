@@ -2128,6 +2128,13 @@
       },
       "sidebarAndPanels": "サイドバーとパネル",
       "themeLabel": "テーマ",
+      "createTheme": {
+        "label": "テーマを作成",
+        "hint": "スタイルや参考画像をもとに Cindy の外観を作成します",
+        "prompt": "Cindy のテーマを作成してください。希望するスタイル：",
+        "unavailable": "テーマ作成スキルを利用できません。スキルで有効になっているか確認してください",
+        "startFailed": "テーマ作成タスクを開けませんでした"
+      },
       "themeAriaLabel": "テーマの選択",
       "localBadge": "(ローカル)",
       "localThemes": {
@@ -16558,6 +16565,9 @@
       },
       "pluginCreator": {
         "description": "Cindy のプラグインを作成・編集・デバッグ・パッケージ化し、必要に応じて公開します。"
+      },
+      "themeCreator": {
+        "description": "Cindy の配色、画像素材、外観設定を作成・検証します。"
       }
     },
     "common": {
@@ -17654,7 +17664,7 @@
     "exit": "計画モードを終了"
   },
   "globalDrop": {
-    "cindyHint": "ドロップしてプラグインをインストール",
+    "cindyHint": "ドロップして Cindy ファイルをインポート",
     "cshareHint": "ドロップして共有セッションをインポート"
   },
   "sessionShare": {
@@ -19814,5 +19824,12 @@
     "keepDraft": "入力中の下書きは保持されます。接続が回復すると、タスクの状態が同期されます。",
     "retry": "再接続",
     "desktopAuthHelp": "起動用ターミナルで接続設定を更新してから、この実験的なクライアントを開き直してください。"
+  },
+  "cindyFiles": {
+    "unsupported": "このバージョンではこのファイルに対応していません。Cindy を更新して再試行してください",
+    "invalid": "この Cindy ファイルは無効か破損しています。ファイルを再取得してください",
+    "failed": "ファイルをインポートできませんでした。再試行してください",
+    "themeInstalled": "テーマを追加しました。外観設定で選択してください",
+    "refreshFailed": "テーマはインストールされましたが、一覧を更新できませんでした。外観設定で更新してください"
   }
 }

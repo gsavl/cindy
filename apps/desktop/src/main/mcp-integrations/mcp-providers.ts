@@ -2,6 +2,7 @@ import { createIMessageMcpServer } from './imessageMcpServer';
 import { getPiKernelManager } from '../agent-binaries/index.js';
 import { PiKernelError } from '../agent-binaries/pi-kernel-manager.js';
 import { manageAppSettings } from '../app-settings/sections.js';
+import { importThemePackageFromTask } from '../local-themes/agent.js';
 import { manageAppModels } from '../app-settings/models.js';
 import { classifyOrigin } from '../input-handoff/originPolicy.js';
 import { captureBotSettingsAccess } from '../maker-ipc/botCapabilityService.js';
@@ -126,7 +127,7 @@ import { createTaskToolCallAuthorizer } from '../maker-ipc/taskToolCallAuthorize
 import { createDesktopTaskActionAuthorizer } from '../maker-ipc/taskActionHost.js';
 import { authorizeGroupTool } from '../maker-ipc/botGroupToolAuthorization.js';
 import { createSharedTaskTools } from './sharedTaskTools.js';
-import { assertTaskActionCurrent, taskActionScheduleGuard } from '../maker-ipc/taskActionAuthorization.js';
+import { assertTaskActionCurrent, captureTaskActionSyncGuard, taskActionScheduleGuard } from '../maker-ipc/taskActionAuthorization.js';
 import {
   getSessionRowSnapshot,
   patchSessionMetaInDb,
@@ -1441,6 +1442,32 @@ export function createDesktopMcpProviders(deps: DesktopMcpProvidersDeps): LiziMc
             return { ok: false, errorCode: error instanceof PiKernelError ? error.reason : 'PI_RUNTIME_FAILED',
               message: 'Pi 操作未确认完成；请重新读取版本和状态。' };
           }
+        }),
+      },
+      themePackages: {
+        import: (context, filePath) => withAccountDataAccess(context.sessionId, async assertCurrent => {
+          const sessionId = context.sessionId;
+          if (!sessionId) throw new Error('Task caller unavailable');
+          const surface = await resolveHelperSurface(tryGetDbClient()!, sessionId);
+          const botGuard = surface === 'bot' || surface === 'bot-main' ? await captureBotSettingsAccess(sessionId) : undefined;
+          const assertAction = captureTaskActionSyncGuard();
+          const assertCaller = async () => {
+            await assertCurrent();
+            if (botGuard) await botGuard();
+            await assertTaskActionCurrent();
+            if (!deps.isCurrentLocalSessionInstance?.(sessionId, context.sessionInstanceId)) throw new Error('Task instance changed');
+          };
+          return importThemePackageFromTask({ filePath, workingDir: context.workingDir ?? '' }, {
+            assertCurrent: assertCaller,
+            assertCurrentSync: () => {
+              assertAction?.();
+              if (!deps.isCurrentLocalSessionInstance?.(sessionId, context.sessionInstanceId)) throw new Error('Task instance changed');
+            },
+            authorizePath: absolutePath => authorizeDesktopSessionPath({
+              sessionId, sessionInstanceId: context.sessionInstanceId, workingDir: context.workingDir ?? '',
+              path: absolutePath, toolName: 'cindy_helper.import_theme_package', operation: 'read',
+            }, deps.getLiveSessionGrantState),
+          });
         }),
       },
       appSettings: {

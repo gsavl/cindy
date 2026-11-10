@@ -2196,6 +2196,13 @@
       },
       "sidebarAndPanels": "Barra lateral e painéis",
       "themeLabel": "Tema",
+      "createTheme": {
+        "label": "Criar tema",
+        "hint": "Descreva um estilo ou adicione uma imagem de referência para personalizar a aparência da Cindy.",
+        "prompt": "Ajuda-me a criar um tema da Cindy. O estilo que pretendo é:",
+        "unavailable": "A Skill de criação de temas não está disponível. Verifique nas Skills se está ativada.",
+        "startFailed": "Não foi possível abrir a tarefa de criação de tema"
+      },
       "themeAriaLabel": "Seleção de tema",
       "localBadge": "(Local)",
       "localThemes": {
@@ -16776,6 +16783,9 @@
       },
       "pluginCreator": {
         "description": "Criar, editar, depurar e empacotar plugins da Cindy ou publicá-los quando solicitado."
+      },
+      "themeCreator": {
+        "description": "Criar e verificar as cores, os recursos visuais e as definições de aparência da Cindy."
       }
     },
     "common": {
@@ -17886,7 +17896,7 @@
     "exit": "Sair do modo de planeamento"
   },
   "globalDrop": {
-    "cindyHint": "Largar para instalar o plugin",
+    "cindyHint": "Largar para importar o ficheiro Cindy",
     "cshareHint": "Largar para importar a sessão partilhada"
   },
   "sessionShare": {
@@ -20073,5 +20083,12 @@
     "keepDraft": "O rascunho será mantido. As tarefas serão sincronizadas quando a ligação for restabelecida.",
     "retry": "Voltar a ligar",
     "desktopAuthHelp": "Atualize as definições de ligação no terminal de arranque e reabra este cliente experimental."
+  },
+  "cindyFiles": {
+    "unsupported": "Esta versão não suporta este ficheiro. Atualiza o Cindy e tenta novamente.",
+    "invalid": "Este ficheiro Cindy é inválido ou está danificado. Obtém uma nova cópia.",
+    "failed": "Não foi possível importar este ficheiro. Tenta novamente.",
+    "themeInstalled": "Tema adicionado. Seleciona-o nas definições de aparência.",
+    "refreshFailed": "O tema foi instalado, mas não foi possível atualizar a lista. Atualiza-a nas definições de aparência."
   }
 }
