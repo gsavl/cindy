@@ -4032,6 +4032,9 @@ Mobile 对所有预创建恢复记录（含未收到创建回包的 `reserved`�
 - 历史查询通道增量支持 `list_teammates`，复用同一个工具 registry 校验与宿主目录读取；不新增 channel。
   旧端拒绝未知查询时按既有远程错误报告，聚合结果保留 `partial`，不当成空目录。
   `list_sessions.hiddenAt` 为可选增量字段，旧响应缺失不推断隐藏；跨电脑伙伴目录中的任务关系使用 `deviceId::sessionId`，伙伴 id 保持原值。
+- `read_session_attachment` 的公开工具结果为分块 base64（最多 64 KiB）与内容摘要，插件媒体与普通文件分别复用 grant / handoff。
+  跨设备历史查询的同名操作仅为宿主之间解析指定消息的附件引用；接收宿主使用既有文件传输取字节后才生成公开结果，绝不把来源路径透给插件。
+  不增加 Device Link channel 或大字节控制帧；旧端拒绝该操作时明确报告不支持，不能当作附件为空。
 
 ## Review 清单
 
