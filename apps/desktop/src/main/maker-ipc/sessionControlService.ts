@@ -3,6 +3,7 @@ import type { AgentRequestReceipt } from '../../shared/forwardedRequest.js';
 import type {
   AgentKind,
   Effort,
+  PermissionMode,
   SessionGracefulStopResult,
   SessionTurnControlSnapshot,
 } from '@cindy/maker-core';
@@ -52,6 +53,7 @@ export type SessionStopResult =
   | Failure<'NOT_FOUND' | 'UNSUPPORTED_CAPABILITY'>;
 
 export interface SessionRuntimeDetails extends SessionActivitySnapshot {
+  permissionMode?: PermissionMode;
   runtimeGeneration: number;
   baselineProfile: SessionRuntimeProfile;
   effectiveProfile: SessionRuntimeProfile;
@@ -70,6 +72,7 @@ export type SessionRuntimeSetResult =
       generation: number;
       effectiveProfile: SessionRuntimeProfile;
       pendingMutation: PendingSessionRuntimeMutation | null;
+      permissionMode?: PermissionMode;
     }
   | Failure<'NOT_FOUND' | 'CONFLICT' | 'INVALID_ARGS' | 'ROUTE_UNAVAILABLE'>;
 
@@ -93,6 +96,7 @@ export interface SessionControlServiceDeps {
   getLiveSession(sessionId: string): SessionControlLiveSession | null;
   getSessionActivitySnapshot(sessionId: string): Promise<SessionActivitySnapshot>;
   getSessionRuntimeDetails(sessionId: string): Promise<SessionRuntimeDetails>;
+  setSessionPermissionMode?(params: { sessionId: string; mode: PermissionMode; beforeMutation?: () => Promise<void> }): Promise<unknown>;
   setSessionRuntime(params: {
     targetSessionId: string;
     expectedGeneration?: number;
@@ -104,12 +108,13 @@ export interface SessionControlServiceDeps {
       providerId?: string | null;
       effort?: Effort | null;
       fastMode?: boolean | 'ultrafast';
+      permissionMode?: PermissionMode;
     };
   }): Promise<SessionRuntimeSetResult>;
   assertExternalInputAllowed(sessionId: string): Promise<void>;
   createQueuedMessage(params: {
     targetSessionId: string;
-    callerSessionId: string;
+    callerSessionId?: string;
     queuedMessageId: string;
     message: string;
   }): Promise<AgentInputQueuedMessage>;
@@ -232,7 +237,7 @@ export function createSessionControlService(deps: SessionControlServiceDeps) {
     },
 
     async steerSession(params: {
-      callerSessionId: string;
+      callerSessionId?: string;
       targetSessionId: string;
       message: string;
       /** Host-owned stable ID; the input coordinator owns acceptance deduplication. */
@@ -371,11 +376,32 @@ export function createSessionControlService(deps: SessionControlServiceDeps) {
         providerId?: string | null;
         effort?: Effort | null;
         fastMode?: boolean | 'ultrafast';
+        permissionMode?: PermissionMode;
       };
     }): Promise<SessionRuntimeSetResult> {
       const missing = await ensureTarget(params.targetSessionId);
       if (params.beforeMutation) await params.beforeMutation();
       if (missing) return missing;
+      if (params.patch.permissionMode !== undefined) {
+        if (!deps.setSessionPermissionMode) return { ok: false, errorCode: 'INVALID_ARGS', message: 'Permission control is unavailable.' };
+        const beforeMutation = combineInputGuards(params.beforeMutation, assertTaskActionCurrent);
+        const { permissionMode, ...runtimePatch } = params.patch;
+        let result: SessionRuntimeSetResult;
+        if (Object.keys(runtimePatch).length) {
+          result = await deps.setSessionRuntime({ ...params, patch: runtimePatch, beforeMutation });
+        } else {
+          const details = await deps.getSessionRuntimeDetails(params.targetSessionId);
+          await beforeMutation?.();
+          if (params.expectedGeneration !== undefined && details.runtimeGeneration !== params.expectedGeneration)
+            return { ok: false, errorCode: 'CONFLICT', message: 'Runtime generation changed; read it again before retrying.' };
+          result = { ok: true, status: 'applied', generation: details.runtimeGeneration,
+            effectiveProfile: details.effectiveProfile, pendingMutation: details.pendingMutation };
+        }
+        if (!result.ok) return result;
+        await beforeMutation?.();
+        await deps.setSessionPermissionMode({ sessionId: params.targetSessionId, mode: permissionMode, beforeMutation });
+        return { ...result, permissionMode };
+      }
       return deps.setSessionRuntime({ ...params,
         beforeMutation: combineInputGuards(params.beforeMutation, assertTaskActionCurrent),
       });

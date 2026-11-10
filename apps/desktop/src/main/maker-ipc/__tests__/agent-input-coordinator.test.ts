@@ -8396,7 +8396,7 @@ describe('AgentInputCoordinator steer transaction', () => {
       getSessionActivitySnapshot: vi.fn(), getSessionRuntimeDetails: vi.fn(), setSessionRuntime: vi.fn(),
       assertExternalInputAllowed: async () => undefined,
       createQueuedMessage: async ({ queuedMessageId, message, callerSessionId }) => makeItem(queuedMessageId, message, {
-        origin: { kind: 'session', senderSessionId: callerSessionId, displayText: message },
+        ...(callerSessionId ? { origin: { kind: 'session' as const, senderSessionId: callerSessionId, displayText: message } } : {}),
       }),
       steerQueuedMessage: (id, item, expected) => h.coordinator.steer(id, item, {
         fallbackToTurn: false, expectedTurnSession: expected.session, expectedTurnGeneration: expected.turnGeneration,
@@ -8470,7 +8470,7 @@ describe('AgentInputCoordinator steer transaction', () => {
       getSessionActivitySnapshot: vi.fn(), getSessionRuntimeDetails: vi.fn(), setSessionRuntime: vi.fn(),
       assertExternalInputAllowed: async () => undefined,
       createQueuedMessage: async ({ queuedMessageId, message, callerSessionId }) => makeItem(queuedMessageId, message, {
-        origin: { kind: 'session', senderSessionId: callerSessionId, displayText: message },
+        ...(callerSessionId ? { origin: { kind: 'session' as const, senderSessionId: callerSessionId, displayText: message } } : {}),
       }),
       steerQueuedMessage: (id, item, expected) => h.coordinator.steer(id, item, {
         fallbackToTurn: false, expectedTurnSession: expected.session, expectedTurnGeneration: expected.turnGeneration,
