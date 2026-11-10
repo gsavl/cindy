@@ -31,6 +31,7 @@ export function WallpaperSection() {
   const buttons = useRef(new Map<WallpaperId, HTMLButtonElement>());
   const [focusedWallpaperId, setFocusedWallpaperId] = useState<WallpaperId | null>(null);
   const {
+    customizedKeys,
     wallpaperId,
     wallpaperOverlay,
     wallpaperVisibility,
@@ -134,11 +135,13 @@ export function WallpaperSection() {
           onClick={resetWallpaper}
           disabled={
             busy ||
-            (wallpaperId === DEFAULT_APPEARANCE_SETTINGS.wallpaperId &&
-              wallpaperOverlay === DEFAULT_APPEARANCE_SETTINGS.wallpaperOverlay &&
-              wallpaperVisibility == null &&
-              wallpaperBlur == null &&
-              wallpaperMotion === DEFAULT_APPEARANCE_SETTINGS.wallpaperMotion)
+            (customizedKeys
+              ? !customizedKeys.some(key => key.startsWith('wallpaper') || key === 'desktopVisibility')
+              : wallpaperId === DEFAULT_APPEARANCE_SETTINGS.wallpaperId &&
+                wallpaperOverlay === DEFAULT_APPEARANCE_SETTINGS.wallpaperOverlay &&
+                wallpaperVisibility == null &&
+                wallpaperBlur == null &&
+                wallpaperMotion === DEFAULT_APPEARANCE_SETTINGS.wallpaperMotion)
           }
         >
           <RotateCcw size={14} aria-hidden />

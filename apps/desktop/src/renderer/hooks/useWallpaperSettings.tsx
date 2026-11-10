@@ -30,6 +30,7 @@ import { useWallpaperBackground } from './useWallpaperBackground';
 import { useReducedMotion } from './useReducedMotion';
 
 export interface WallpaperSettings {
+  customizedKeys?: readonly string[];
   wallpaperId: WallpaperId;
   wallpaperOverlay: number;
   wallpaperVisibility?: number | null;
@@ -73,6 +74,7 @@ function getInitialWallpaperSettings(): WallpaperSettings {
 
 function pickWallpaperSettings(settings: AppearanceSettings): WallpaperSettings {
   return {
+    customizedKeys: settings.customizedKeys,
     wallpaperId: settings.wallpaperId,
     wallpaperOverlay: settings.wallpaperOverlay,
     wallpaperVisibility: settings.wallpaperVisibility,

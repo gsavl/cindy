@@ -34,6 +34,7 @@ export interface FontSettings {
 }
 
 interface ConfigurableFontSettings extends FontSettings {
+  customizedKeys?: readonly string[];
   terminalFamily: string;
   terminalSize: number;
 }
@@ -139,6 +140,7 @@ export function FontSettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<ConfigurableFontSettings>(() => {
     const initial = getInitialAppearanceSettings();
     return {
+      customizedKeys: initial.customizedKeys,
       uiFamily: initial.uiFamily,
       codeFamily: initial.codeFamily,
       uiSize: initial.uiSize,
@@ -161,6 +163,7 @@ export function FontSettingsProvider({ children }: { children: ReactNode }) {
     return bridge.onChanged((next: AppearanceSettings) => {
       const normalized = normalizeAppearanceSettings(next);
       const confirmed = {
+        customizedKeys: normalized.customizedKeys,
         uiFamily: normalized.uiFamily,
         codeFamily: normalized.codeFamily,
         uiSize: normalized.uiSize,
