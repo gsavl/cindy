@@ -33,6 +33,7 @@ export const TASK_ACTION_TOOLS: ReadonlySet<string> = new Set([
   'advance_session_task_route',
   'archive_sessions',
   'unarchive_sessions',
+  'delete_session',
   'rename_sessions',
   'move_session',
   'manage_session_prs',

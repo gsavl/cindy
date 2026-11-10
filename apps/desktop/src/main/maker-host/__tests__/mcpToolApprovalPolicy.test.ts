@@ -16,6 +16,7 @@ describe('desktop Claude read-only allowlist', () => {
     ['cindy_scheduler', 'schedule_delete'],
     ['cindy_scheduler', 'routine_delete'],
     ['cindy_helper', 'routine_delete'],
+    ['cindy_helper', 'delete_session'],
   ])('routes %s %s through ordinary per-call approval', (serverName, name) => {
     for (const toolParams of [{ id: 'automation' }, { id: 'automation', device: 'local' }]) {
       expect(getDesktopMcpToolApprovalPolicy({ serverName, toolName: name, toolParams })).toBe('prompt-each-time');
