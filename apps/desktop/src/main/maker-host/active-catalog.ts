@@ -408,12 +408,11 @@ function resolveXdPiGatewayServerModelApi(
   )
     return null;
   const nativeApi = nativeApiForRoute('xd', model.id);
-  // Global Gemini Gateway exposes Responses even though Gemini's native API is Google.
-  // Honor that explicit execution route before native metadata selects an unavailable /v1beta
-  // entry point (#9288). Keep the native identity for presentation, and retain CN/dev, direct
-  // Google providers, and Gateway routes without this declaration on their existing policy.
+  // Gemini Gateway can expose Responses even though Gemini's native API is Google.
+  // Honor that explicit execution route in every region before native metadata selects an
+  // unavailable /v1beta entry point (#9288). Keep the native identity for presentation;
+  // direct Google providers and Gateway routes without this declaration retain their policy.
   if (
-    CURRENT_CINDY_REGION === 'global' &&
     nativeApi === 'google-generative-ai' &&
     model.perAgent?.pi?.wireProtocol === 'openai-responses'
   ) return 'openai-responses';
@@ -459,7 +458,7 @@ function resolveXdPiGatewayHintModelApi(model: XdGatewayModelInfo): PiModelApi |
 }
 
 function resolveXdPiGatewayModelApi(model: XdGatewayModelInfo): PiModelApi | null {
-  // Except for the explicit Global Gemini Responses route handled above, retain source authority:
+  // Except for the explicit Gemini Responses route handled above, retain source authority:
   // Cindy Server downloaded Catalog > version-matched local Pi table > Cindy AI Gateway hint.
   const catalogApi = resolveXdPiGatewayServerModelApi(model);
   if (catalogApi !== undefined) return catalogApi;
@@ -1944,8 +1943,11 @@ function computeMerged(): Catalog {
           : undefined;
         const contextWindow = Math.min(model.contextWindow, declaredWindow ?? 272_000);
         if (contextWindow === model.contextWindow) return model;
+        // A working fallback is not evidence of physical capacity. Preserve a
+        // declared maximum, or retain the original window only when verified.
         return { ...model, contextWindow,
-          contextWindowMax: model.contextWindowMax ?? model.contextWindow };
+          ...(model.contextWindowMax === undefined && model.contextWindowVerified === true
+            ? { contextWindowMax: model.contextWindow } : {}) };
       }),
     ])),
   }));
@@ -2210,15 +2212,22 @@ export function setCustomProviders(providers: Provider[]): void {
  * 保存当前 owner 的原始配置并按生效 Registry 展开。配置本身不改写、不持久化；目录刷新时
  * 可在同一个 revision 内重算 effort 投影。
  */
-export function setCustomProviderConfigs(configs: CustomProviderConfig[]): void {
-  customConfigs = [...configs];
-  custom = customConfigs.map((config) =>
+export function setCustomProviderConfigs(
+  configs: CustomProviderConfig[],
+  options: { skipUnchanged?: boolean } = {},
+): void {
+  const next = configs.map((config) =>
     buildUserProvider(config, {
       modelRegistry: trustedCustomProviderRegistry,
       presets: (base ?? BUNDLED_CATALOG).presets,
       getDiscoveredModelMetadata,
     }),
   );
+  // Compare the projection too: unchanged raw configs can acquire new engine
+  // capabilities or Registry metadata. Ordinary no-op reloads emit no revision.
+  if (options.skipUnchanged && isDeepStrictEqual(customConfigs, configs) && isDeepStrictEqual(custom, next)) return;
+  customConfigs = [...configs];
+  custom = next;
   markChanged();
 }
 

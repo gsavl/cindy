@@ -15,8 +15,9 @@ import { providerPresetOAuth } from '@cindy/model-providers';
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-import type { OAuthProviderDescriptor, ProviderView } from '@cindy/model-providers';
+import type { CustomProviderConfig, OAuthProviderDescriptor, ProviderView } from '@cindy/model-providers';
 import { fetchSavedOAuthProviderModels } from '../provider-model-fetch.js';
+import { createModelSourceRevalidator } from '../model-source-revalidation.js';
 
 import {
   parseModelsListResponse,
@@ -130,9 +131,12 @@ describe('Copilot account-specific model discovery (#6663)', () => {
     fetchResponder = () => new Response('{"data":[{"id":"test-model"}]}');
     const original = 'https://api.individual.githubcopilot.com';
     const expected = `https://api.${account}.githubcopilot.com/models`;
-    const automatic = await discoverGenericOAuthModels('copilot-account', oauth, `${original}/models`, 'pi');
+    // Regression: login derives the URL from the preset, unlike the old fixture
+    // which supplied /models and concealed the erroneous /v1/models request.
+    const automatic = await discoverGenericOAuthModels('copilot-account', oauth, deriveModelsDiscoveryUrl(original), 'pi');
     expect(automatic).toMatchObject([{ id: 'test-model' }]);
     expect(fetchCalls.map(call => call.url)).toEqual([expected]);
+    expect(fetchCalls[0].headers).toMatchObject({ 'copilot-integration-id': 'vscode-chat' });
   });
 
   it.each(['individual', 'business', 'enterprise'] as const)('uses the %s account host when refreshing saved model lists', async account => {
@@ -145,12 +149,12 @@ describe('Copilot account-specific model discovery (#6663)', () => {
     const provider: ProviderView = {
       id: 'copilot-account', name: 'Copilot', source: 'user', connected: true,
       auth: { method: 'oauth', oauth }, agents: ['pi'], models: {},
-      routing: { pi: { upstream: original, modelsUrl: `${original}/models`, authStrategy: 'oauth-token', wireProtocol: 'openai-chat' } },
+      routing: { pi: { upstream: original, authStrategy: 'oauth-token', wireProtocol: 'openai-chat' } },
     };
     const saved = await fetchSavedOAuthProviderModels(provider, 'pi', 'copilot-account', () => true,
       async (url, init) => {
         requests.push(String(url));
-        expect(init?.headers).toEqual({ authorization: `Bearer ${token}` });
+        expect(init?.headers).toMatchObject({ authorization: `Bearer ${token}`, 'copilot-integration-id': 'vscode-chat' });
         return new Response('{"data":[{"id":"test-model"}]}');
       });
     expect(saved).toMatchObject({ ok: true, models: [{ id: 'test-model' }] });
@@ -169,6 +173,53 @@ describe('Copilot account-specific model discovery (#6663)', () => {
 });
 
 describe('manual model refresh for saved OAuth providers', () => {
+  // #9882 OAuth semaphore finding, unit: real recovery -> OAuth refresh -> HTTP
+  // with injected storage/transport. Earlier concurrency mocks skipped OAuth.
+  // Six expired connections x three runtimes must share token refreshes, keep
+  // combined token/model traffic <=4, and never retry failed tokens in background.
+  it.each([false, true])('bounds recovery token and model requests with token failure=%s', async failToken => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let active = 0; let peak = 0; let tokenRequests = 0; let modelRequests = 0;
+    const network = async (token: boolean) => {
+      if (token) tokenRequests++; else modelRequests++;
+      active++; peak = Math.max(peak, active);
+      try {
+        await gate;
+        return token ? new Response(JSON.stringify({ access_token: 'fake-new', expires_in: 3600 }), { status: failToken ? 503 : 200 })
+          : new Response(JSON.stringify({ data: [{ id: 'one', owned_by: 'A' }] }));
+      } finally { active--; }
+    };
+    configureGenericOAuth({ fetchImpl: async () => network(true) });
+    const configs: CustomProviderConfig[] = Array.from({ length: 6 }, (_, i) => {
+      const id = `bounded-oauth-${i}`;
+      seedBlob(id, { access_token: 'fake-expired', refresh_token: 'fake-refresh', expires_at: nowMs - 1 });
+      return { id, name: id, auth: { method: 'oauth', oauth: OAUTH }, runtimes: Object.fromEntries(
+        (['claude-code', 'codex', 'pi'] as const).map(agent => [agent, { baseUrl: 'https://api.acme.example/v1',
+          wireProtocol: 'openai-chat', models: [{ id: 'one', name: 'One', discoveredSource: { kind: 'magpie', providerId: 'old' } }],
+        }]),
+      ) };
+    });
+    const revalidate = createModelSourceRevalidator({
+      now: () => nowMs, credentialRevision: () => 0, isMutating: () => false, save: async () => true,
+      fetchModels: async (config, agent, isCurrent, scheduleSourceRecovery) => {
+        const provider: ProviderView = { id: config.id, name: config.name, source: 'user', connected: true,
+          auth: { method: 'oauth', oauth: OAUTH }, agents: [agent], models: {},
+          routing: { [agent]: { upstream: 'https://api.acme.example/v1', wireProtocol: 'openai-chat', authStrategy: 'oauth-token' } },
+        };
+        const result = await fetchSavedOAuthProviderModels(provider, agent, config.id, isCurrent, async () => network(false),
+          undefined, { sourceRecovery: true, requireComplete: true, sourceRecoveryScope: config.id, scheduleSourceRecovery });
+        return result.ok ? result.models ?? null : null;
+      },
+    });
+    const pending = revalidate(configs, 'scope', () => true);
+    try { await vi.waitFor(() => expect(tokenRequests).toBeGreaterThanOrEqual(4)); }
+    finally { release(); await pending; }
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(tokenRequests).toBe(6);
+    expect(modelRequests).toBe(6);
+  });
+
   function savedProvider(presetId = 'openrouter'): ProviderView {
     const baseUrl = presetId === 'nous'
       ? 'https://inference-api.nousresearch.com/v1' : 'https://openrouter.ai/api/v1';
@@ -181,6 +232,47 @@ describe('manual model refresh for saved OAuth providers', () => {
       }])),
     };
   }
+
+  // Independent review #9882, unit: real OAuth wrapper + recovery cooldown.
+  // Model HTTP Retry-After coverage missed a throttled token endpoint whose
+  // failure was swallowed before model discovery. Inject clock/HTTP, no waits.
+  it.each([
+    { status: 429, preset: 'nous', repair: false },
+    { status: 503, preset: 'nous', repair: true },
+    { status: 429, preset: 'github-copilot', repair: true },
+  ])('honors token $status Retry-After for $preset with generation repair=$repair', async ({ status, preset, repair }) => {
+    const oauth = providerPresetOAuth(preset)!;
+    seedBlob('throttled', { access_token: 'fake-expired', refresh_token: 'fake-refresh', expires_at: nowMs - 1 });
+    let current = true;
+    configureGenericOAuth({ fetchImpl: async () => {
+      fetchCalls.push({ url: 'token' });
+      if (repair) current = false;
+      return new Response('{}', { status, headers: { 'retry-after': '3600' } });
+    } });
+    const provider = { ...savedProvider('nous'), auth: { method: 'oauth' as const, oauth } };
+    const config: CustomProviderConfig = { id: 'throttled', name: 'Throttled', auth: { method: 'oauth', oauth }, runtimes: { pi: {
+      baseUrl: 'https://api.acme.example/v1', wireProtocol: 'openai-chat', models: [{ id: 'one', name: 'One',
+        discoveredSource: { kind: 'magpie', providerId: 'old' } }],
+    } } };
+    const modelFetch = vi.fn(async () => new Response('{}', { status: 401 }));
+    const revalidate = createModelSourceRevalidator({ now: () => nowMs, credentialRevision: () => 0,
+      isMutating: () => false, save: async () => false,
+      fetchModels: async (_config, agent, isCurrent, scheduleSourceRecovery) => {
+        const result = await fetchSavedOAuthProviderModels(provider, agent, config.id, isCurrent, modelFetch, undefined,
+          { sourceRecovery: true, requireComplete: true, sourceRecoveryScope: 'throttled-owner', scheduleSourceRecovery });
+        return result.retryAt ? { retryAt: result.retryAt } : null;
+      },
+    });
+    await revalidate([config], 'old', () => current, 'owner');
+    expect(fetchCalls).toHaveLength(1);
+    nowMs += 300_000;
+    await revalidate([config], 'new', () => true, 'owner');
+    expect(fetchCalls).toHaveLength(1);
+    expect(modelFetch).not.toHaveBeenCalled();
+    nowMs += 3_300_000;
+    await revalidate([config], 'new', () => true, 'owner');
+    expect(fetchCalls).toHaveLength(2);
+  });
 
   // Unit: refresh must reuse the saved login for both OpenRouter catalogs. The
   // former single-response fixture rejected the speech URL and hid its models.
@@ -214,6 +306,45 @@ describe('manual model refresh for saved OAuth providers', () => {
       expect(JSON.stringify(result)).not.toContain('fake-oauth-access');
     });
   }
+
+  // #9882, unit: production saved-OAuth discovery must inherit the background
+  // first-page byte bound; earlier limit tests only covered direct API fetches.
+  it('bounds the first saved-OAuth background catalog response', async () => {
+    seedBlob('scoped-account', { access_token: 'fake-oauth-access' });
+    const cancel = vi.fn();
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new Uint8Array(8 * 1024 * 1024 + 1)); }, cancel,
+    }));
+    const result = await fetchSavedOAuthProviderModels(savedProvider('nous'), 'pi', 'scoped-account', () => true,
+      async () => response, undefined, { requireComplete: true });
+    expect(result.ok).toBe(false);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  // #9882, unit: the real OAuth wrapper must preserve a late failure deadline
+  // without accepting stale model data. Revalidator mocks missed this wrapper.
+  // Minimal input: generation expires during a 429/503 read; manual reads and
+  // successful stale responses retain their existing AUTH_INVALID-only result.
+  it.each([
+    { status: 429, recovery: true },
+    { status: 503, recovery: true },
+    { status: 429, recovery: false },
+    { status: 200, recovery: true },
+  ])('handles late OAuth $status with recovery=$recovery', async ({ status, recovery }) => {
+    seedBlob('scoped-account', { access_token: 'fake-oauth-access' });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(nowMs);
+    let current = true;
+    try {
+      const result = await fetchSavedOAuthProviderModels(savedProvider('nous'), 'pi', 'scoped-account', () => current,
+        async () => {
+          current = false;
+          return new Response(JSON.stringify({ data: ['stale-model'] }), { status, headers: { 'retry-after': '900' } });
+        }, undefined, { requireComplete: true, sourceRecovery: recovery });
+      expect(result).toEqual({ ok: false, code: 'AUTH_INVALID',
+        ...(recovery && status !== 200 ? { retryAt: nowMs + 900_000 } : {}),
+      });
+    } finally { clock.mockRestore(); }
+  });
 
   it('renews an expiring login before fetching the model list', async () => {
     const provider = savedProvider('nous');
